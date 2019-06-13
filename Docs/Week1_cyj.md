@@ -215,6 +215,170 @@
 
     感兴趣可以做进一步阅读：[深度学习中Dropout原理解析](https://zhuanlan.zhihu.com/p/38200980)
 
+## 循环神经网络
+
+1. 出现的原因
+
+    全连接和卷积神经网络只能处理单个的输入，输入与输入之间没有任何关系。
+
+    有一些任务需要能够更好地处理**序列**信息，即输入与输入之间是有关系的。
+
+    > 比如处理文本、视频、音频。例如当理解一句话的意思时，不能孤立第理解这句话的每个词，需要能够理解这些词连接起来的**序列**。
+
+    然后 RNN 出现了，RNN 最早用于自然语言处理。
+
+2. 网络结构
+
+    ![RNN_Structure](./figures/Week1_cyj_RNN_Structure.PNG)
+
+    不考虑 W，此时网络结构为最简单的 FNN ：
+    - X：向量，输入层。
+    - U：权重矩阵，输入层到隐藏层
+    - S：向量，隐藏层
+    - V：权重矩阵，隐藏层到输出层
+    - O：向量，输出层
+    考虑 W，即 RNN 中隐藏层不仅仅取决于当前这次输入的 X，还取决于上一次隐藏层的值 S。 权重矩阵 W 就是隐藏层上一次的值作为这一次的输入的权重。
+
+    ![RNN_Structure_Expanded](./figures/Week1_cyj_RNN_Structure_Expanded.PNG)
+
+    将上图按照时间线展开，即得到了 RNN 的另一种画法
+     
+    ![RNN_Expanded](./figures/Week1_cyj_RNN_Expanded.PNG)
+
+    这个网络在 $t$ 时刻接收到 $x_t$ 之后，隐藏层为 $s_t$，输出值为 $o_t$，同时，$s_t$ 的值还取决于 $s_{t-1}$，即
+
+    $$
+    \begin{aligned} O_{t} &=g\left(V \cdot S_{t}\right) \\ S_{t} &=f\left(U \cdot X_{t}+W \cdot S_{t-1}\right) \end{aligned}
+    $$
+
+    当隐藏层层数增多后，就变成了深度循环神经网络。
+
+3. 代码？
+
+4. 训练过程
+
+    一般来说， RNN 被广泛应用于序列标注问题，在序列标注问题中，模型的输入是一段时间序列，记为 $\bold{x} = \{x_1,x_2,\cdots,x_T \}$， 模型的目标是为输入序列的每个元素打上标签集合中的对应标签，记为 $\bold{y} = \{ y_1,y_r,\cdots, y_r\}$
+
+    NLP 中的大部分任务都可以归结为序列标注问题：分词、实体识别、词性标注。
+
+    与全连接神经网络类似，使用反向传播算法进行参数优化，但考虑到在 RNN 中，信息除了在上下层级之间的纵向传播，还存在时间上的横向传播，因此传统的 BP 算法不足以满足 RNN 训练的需求，因此有人提出 BPTT ( Back Propagation through time ) 算法。
+    
+    对于 BPTT 算法，我们首先需要约定一些符号和细节：
+    
+    ![RNN_Expanded](./figures/Week1_cyj_RNN_Expanded_2.PNG)
+
+    - RNN 要预测的输出是一个 one-hot 向量，表示下一个时刻各个单词出现的概率
+    - 由于 $y_t$ 是 one-hot ，不妨设 $y_{t,j} = 1$，那么此时的交叉熵为 $E_{t}=-y_{t}^{T} \log \left(\hat{y}_{t}\right)$，也就是说如果 $t$ 出现的是第 $j$ 个词，那么计算交叉熵时只要看 $\hat{y}_t$ 的第 $j$ 个分量即可。
+    - $E$：一个句子的损失函数，由各个时刻（即每个word）的损失函数组成，$E = \sum_{t}^{T} E_t$
+    - 在推导时选择以 SGD 算法为主，梯度更新基于单个训练样例
+    - $s_t$：第 t 时刻 RNN 隐藏层输入
+    - $h_t$：第 t 时刻 RNN 隐藏层输出
+    - $z_t$：输出层的汇集输入
+    - $r_t = \hat{y}_t-y_t$：残差向量
+    - $W$：输入层到隐藏层的权值
+    - $U$：隐藏层上一个时刻到当前时刻的权值
+    - $V$：隐藏层到输出层的权值
+  
+    $$
+    \left\{\begin{array}{l}{s_{t}=U h_{t-1}+W x_{t}} \\ {h_{t}=\tanh \left(s_{t}\right)} \\ {z_{t}=V h_{t}} \\ {\hat{y}_{t}=\operatorname{softmax}\left(z_{t}\right)} \\ {E_{t}=-y_{t}^{T} \log \left(\hat{y}_{t}\right)} \\ {E=\sum_{t}^{T} E_{t}}\end{array}\right.
+    $$
+
+    BPTT 与 BP 类似，是在时间上反传的梯度下降算法。 RNN 中，我们的目的是求得 $\frac{\partial E}{\partial U}, \frac{\partial E}{\partial W}, \frac{\partial E}{\partial V}$，根据这三个变化率来优化三个参数，由于$\frac{\partial E}{\partial U}=\sum_{t} \frac{\partial E_{t}}{\partial U}$，因此我们只要对每个时刻的损失函数求偏导再求和即可。
+
+    - 计算 $\frac{\partial E_{t}}{\partial V}$
+
+        $$ \frac{\partial E_{t}}{\partial V_{ij}} = tr((\frac{\partial E_{t}}{\partial z_t})^T \cdot \frac{\partial z_{t}}{\partial V_{ij}})$$
+        $$
+        =\operatorname{tr}\left(\left(\hat{y}_{t}-y_{t}\right)^{T} \cdot\left[\begin{array}{c}{0} \\ {\vdots} \\ {\frac{\partial z_{t}^{(i)}}{\partial V_{i j}}} \\ {\vdots} \\ {0}\end{array}\right]\right)
+        $$
+        $$
+        =r_{t}^{(i)} h_{t}^{(j)}
+        $$
+
+        其中：
+        - $r_{t}^{(i)}=\left(\hat{y}_{t}-y_{t}\right)^{(i)}$ 表示残差向量第 $i$ 个分量，$s_{t}^{(j)}$ 表示其第 $j$ 个分量。
+
+        那么解得
+
+        $$
+        \begin{array}{c}{\frac{\partial E_{t}}{\partial V}=\left(\hat{y}_{t}-y_{t}\right) \otimes h_{t}} \\ 
+        \\
+        {\frac{\partial E}{\partial V}=\sum_{t=0}^{T}\left(\hat{y}_{t}-y_{t}\right) \otimes h_{t}}\end{array}
+        $$
+
+    - 计算 $\frac{\partial E_{t}}{\partial U}$ 
+        
+        $U$ 是各个时刻共享的，所以 t 之前每个时刻 U 的变化都对 $E_t$ 有贡献，那么应用链式法则求导：
+
+        $$
+        \frac{\partial E_{t}}{\partial U}=\sum_{k=0}^{t} \frac{\partial s_{k}}{\partial U} \frac{\partial E_{t}}{\partial s_{k}}
+        $$
+
+        但由于 $\frac{\partial s_{k}}{\partial U}$ （分子向量，分母矩阵）无法求导，因此拆解为 $E_t$ 对 $U_{ij}$ 的偏导数：
+
+        $$
+        \frac{\partial E_{t}}{\partial U_{i j}}=\sum_{k=0}^{t} \operatorname{tr}\left[\left(\frac{\partial E_{t}}{\partial s_{k}}\right)^{T} \frac{\partial s_{k}}{\partial U_{i j}}\right]=\sum_{k=0}^{t} \operatorname{tr}\left[\left(\delta_{k}\right)^{T} \frac{\partial s_{k}}{\partial U_{i j}}\right]
+        $$
+        
+        - 求 $\delta_k$：
+
+            考虑到：
+
+            $$
+            s_{k} \rightarrow h_{k} \rightarrow s_{k+1} \rightarrow \ldots \rightarrow E_{t}
+            $$
+
+            因此：
+
+            $$
+            \begin{array}{c} 
+            \delta_{k}=\frac{\partial h_{k}}{\partial s_{k}} \frac{\partial s_{k+1}}{\partial h_{k}} \frac{\partial E_{t}}{\partial s_{k+1}}\\
+            \\=\operatorname{diag}\left(1-h_{k} \odot h_{k}\right) U^{T} \delta_{k+1}\\\\=\left(U^{T} \delta_{k+1}\right) \odot\left(1-h_{k} \odot h_{k}\right)
+            \end{array}
+            $$
+
+            得到了 $\delta_k$ 与 $\delta_{k+1}$ 的递推关系
+
+        - 求 $\delta_t$：
+            $$
+            \begin{array}{c} 
+            \delta_{t}=\frac{\partial E_{t}}{\partial s_{t}}=\frac{\partial h_{t}}{\partial s_{t}} \frac{\partial z_{t}}{\partial h_{t}} \frac{\partial E_{t}}{\partial z_{t}}\\ 
+            \\
+            =\operatorname{diag}\left(1-h_{t} \odot h_{t}\right) \cdot V^{T} \cdot\left(\hat{y}_{t}-y_{t}\right)\\
+            \\
+            =\left(V^{T}\left(\hat{y}_{t}-y_{t}\right)\right) \odot\left(1-h_{t} \odot h_{t}\right)
+            \end{array}
+            $$
+
+
+        带入后：
+        
+        $$
+        \begin{array}{c}{\frac{\partial E_{t}}{\partial U_{i j}}=\sum_{k=0}^{t} \delta_{k}^{(i)} h_{k-1}^{(j)}} \\
+        \\
+        {\frac{\partial E_{t}}{\partial U}=\sum_{k=0}^{t} \delta_{k} \otimes h_{k-1}} \\
+        \\
+        {\frac{\partial E}{\partial U}=\sum_{t=0}^{T} \sum_{k=0}^{t} \delta_{k} \otimes h_{k-1}}\end{array}
+        $$
+    
+    - 计算 $\frac{\partial E_{t}}{\partial W}$ 
+
+        $$
+        \frac{\partial E_{t}}{\partial W}=\sum_{k=0}^{t} \delta_{k} \otimes x_{k}
+        $$
+
+    综上：
+
+    $$
+    \begin{aligned} V & :=V-\lambda \sum_{t=0}^{T}\left(\hat{y}_{t}-y_{t}\right) \otimes h_{t} \\ U : &=U-\lambda \sum_{t=0}^{T} \sum_{k=0}^{t} \delta_{k} \otimes h_{k-1} \\ W & :=W-\lambda \sum_{t=0}^{T} \sum_{k=0}^{t} \delta_{k} \otimes x_{k} \end{aligned}
+    $$
+
+5. 参考文献
+
+    - [零基础入门深度学习(5) - 循环神经网络](https://zybuluo.com/hanbingtao/note/541458)
+    - [一文搞懂RNN（循环神经网络）基础篇](https://zhuanlan.zhihu.com/p/30844905)
+    - [BPTT算法推导](https://www.cnblogs.com/wacc/p/5341670.html)
+
 ## 其他工具
 
 [神经网络绘图工具](http://alexlenail.me/NN-SVG/LeNet.html)
